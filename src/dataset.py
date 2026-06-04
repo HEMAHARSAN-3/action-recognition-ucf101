@@ -56,6 +56,26 @@ def sample_frames(video_path, num_frames=16):
     return np.array(frames)
 
 
+def save_frames(frames, output_dir):
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    for i, frame in enumerate(frames):
+
+        frame_bgr = cv2.cvtColor(
+            frame,
+            cv2.COLOR_RGB2BGR
+        )
+
+        cv2.imwrite(
+            str(output_dir / f"frame_{i:02d}.jpg"),
+            frame_bgr
+        )
+
+
 if __name__ == "__main__":
 
     dataset_root = Path("data/raw/UCF-101")
@@ -68,9 +88,12 @@ if __name__ == "__main__":
 
     frames = sample_frames(first_video)
 
-    print("Frames Shape:", frames.shape)
+    save_frames(
+        frames,
+        Path("outputs/sample_frames")
+    )
 
     print(
-        "Expected:",
-        "(16,112,112,3)"
+        f"Saved {len(frames)} frames "
+        f"to outputs/sample_frames"
     )
