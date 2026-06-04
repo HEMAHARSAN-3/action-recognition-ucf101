@@ -1,3 +1,4 @@
+import cv2
 from pathlib import Path
 
 
@@ -23,23 +24,37 @@ def load_train_split(split_file):
     return samples
 
 
+def inspect_video(video_path):
+    cap = cv2.VideoCapture(str(video_path))
+
+    if not cap.isOpened():
+        print("Failed to open video")
+        return
+
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    print("\nVideo Information")
+    print("-" * 30)
+    print(f"Frames : {frame_count}")
+    print(f"FPS    : {fps}")
+    print(f"Size   : {width} x {height}")
+
+    cap.release()
+
+
 if __name__ == "__main__":
 
-    class_file = "data/splits/classInd.txt"
-    train_file = "data/splits/trainlist01.txt"
+    dataset_root = Path("data/raw/UCF-101")
 
-    classes = load_classes(class_file)
-    train_samples = load_train_split(train_file)
+    train_samples = load_train_split(
+        "data/splits/trainlist01.txt"
+    )
 
-    print(f"Total Classes: {len(classes)}")
-    print(f"Training Videos: {len(train_samples)}")
+    first_video = dataset_root / train_samples[0][0]
 
-    print("\nFirst 5 Classes:")
-    for i, (name, idx) in enumerate(classes.items()):
-        if i == 5:
-            break
-        print(idx, name)
+    print(f"\nVideo Path:\n{first_video}")
 
-    print("\nFirst 5 Training Samples:")
-    for sample in train_samples[:5]:
-        print(sample)
+    inspect_video(first_video)
