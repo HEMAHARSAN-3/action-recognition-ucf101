@@ -1,16 +1,18 @@
 import torch
 import torch.nn as nn
-from torchvision.models.video import r3d_18
+
+from torchvision.models.video import (
+    r3d_18,
+    R3D_18_Weights
+)
 
 
 def build_model(num_classes=101):
-    """
-    Build R3D-18 model for UCF101 action recognition
-    """
 
-    model = r3d_18(weights=None)
+    model = r3d_18(
+        weights=R3D_18_Weights.DEFAULT
+    )
 
-    # Replace final classification layer
     model.fc = nn.Linear(
         model.fc.in_features,
         num_classes
@@ -21,32 +23,17 @@ def build_model(num_classes=101):
 
 if __name__ == "__main__":
 
-    # Create model
     model = build_model()
 
-    # Create dummy batch
     dummy_input = torch.randn(
-        4,   # Batch Size
-        3,   # RGB Channels
-        16,  # Frames
-        112, # Height
-        112  # Width
+        1,
+        3,
+        16,
+        112,
+        112
     )
 
-    # Forward Pass
     output = model(dummy_input)
 
-    print("=" * 50)
-    print("R3D-18 MODEL TEST")
-    print("=" * 50)
-
-    print("\nInput Shape:")
-    print(dummy_input.shape)
-
-    print("\nOutput Shape:")
+    print("Output Shape:")
     print(output.shape)
-
-    print("\nNumber of Classes:")
-    print(output.shape[1])
-
-    print("\nModel Test Successful!")
