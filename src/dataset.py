@@ -1,16 +1,6 @@
 import cv2
+import numpy as np
 from pathlib import Path
-
-
-def load_classes(class_file):
-    classes = {}
-
-    with open(class_file, "r") as f:
-        for line in f:
-            idx, class_name = line.strip().split()
-            classes[class_name] = int(idx) - 1
-
-    return classes
 
 
 def load_train_split(split_file):
@@ -24,25 +14,46 @@ def load_train_split(split_file):
     return samples
 
 
-def inspect_video(video_path):
+def sample_frames(video_path, num_frames=16):
+
     cap = cv2.VideoCapture(str(video_path))
 
-    if not cap.isOpened():
-        print("Failed to open video")
-        return
+    total_frames = int(
+        cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    )
 
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_indices = np.linspace(
+        0,
+        total_frames - 1,
+        num_frames,
+        dtype=int
+    )
 
-    print("\nVideo Information")
-    print("-" * 30)
-    print(f"Frames : {frame_count}")
-    print(f"FPS    : {fps}")
-    print(f"Size   : {width} x {height}")
+    frames = []
+
+    for idx in frame_indices:
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+
+        success, frame = cap.read()
+
+        if success:
+
+            frame = cv2.cvtColor(
+                frame,
+                cv2.COLOR_BGR2RGB
+            )
+
+            frame = cv2.resize(
+                frame,
+                (112, 112)
+            )
+
+            frames.append(frame)
 
     cap.release()
+
+    return np.array(frames)
 
 
 if __name__ == "__main__":
@@ -55,6 +66,11 @@ if __name__ == "__main__":
 
     first_video = dataset_root / train_samples[0][0]
 
-    print(f"\nVideo Path:\n{first_video}")
+    frames = sample_frames(first_video)
 
-    inspect_video(first_video)
+    print("Frames Shape:", frames.shape)
+
+    print(
+        "Expected:",
+        "(16,112,112,3)"
+    )
