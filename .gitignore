@@ -1,0 +1,25 @@
+# Virtual Environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Dataset
+datasets/
+checkpoints/
+
+# Outputs
+outputs/
+wandb/
+
+# Model files
+*.pth
+*.pt
+
+# Videos
+*.avi
+*.mp4
+
+# Optical Flow
+*.npy
