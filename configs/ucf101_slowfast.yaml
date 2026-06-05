@@ -1,0 +1,36 @@
+dataset:
+  name: ucf101
+  root: datasets/UCF101
+  num_classes: 101
+  num_frames: 32
+  frame_size: [224, 224]
+  modality: rgb
+
+model:
+  arch: slowfast
+  pretrained: true
+
+training:
+  epochs: 80
+  batch_size: 4
+
+  accumulation_steps: 4
+
+  lr: 0.001
+  weight_decay: 0.0001
+
+  label_smoothing: 0.1
+
+  amp: true
+
+  ema_decay: 0.9999
+
+  gradient_clip: 1.0
+
+  scheduler: onecycle
+
+  checkpoint_dir: checkpoints
+
+  use_wandb: false
+
+seed: 42

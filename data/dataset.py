@@ -151,7 +151,7 @@ class VideoDataset(Dataset):
 
         return indices
 
-    def _read_video(
+    def _load_frames(
         self,
         video_path,
     ):
