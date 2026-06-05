@@ -39,6 +39,13 @@ def accuracy(
 ):
     """
     Top-1 Accuracy
+
+    Args:
+        output: (B, num_classes)
+        target: (B,)
+
+    Returns:
+        float
     """
 
     with torch.no_grad():
@@ -66,13 +73,28 @@ def top_k_accuracy(
     topk=(1, 5),
 ):
     """
+    Compute Top-K Accuracy.
+
+    Automatically handles cases where
+    K > num_classes.
+
+    Args:
+        output: (B, num_classes)
+        target: (B,)
+        topk: tuple
+
     Returns:
-        list of accuracies
+        List[float]
     """
 
     with torch.no_grad():
 
-        maxk = max(topk)
+        num_classes = output.size(1)
+
+        maxk = min(
+            max(topk),
+            num_classes,
+        )
 
         batch_size = target.size(0)
 
@@ -92,6 +114,11 @@ def top_k_accuracy(
         results = []
 
         for k in topk:
+
+            k = min(
+                k,
+                num_classes,
+            )
 
             correct_k = (
                 correct[:k]
