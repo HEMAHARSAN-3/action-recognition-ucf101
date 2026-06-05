@@ -1,23 +1,34 @@
 """
 engine/trainer.py
 
-Training Infrastructure
+Training Engine
 
-Part A:
+Features:
+- AMP Support
+- Gradient Accumulation
 - EMA
-- Checkpoint Manager
-- Trainer Skeleton
+- Checkpoint Saving
+- Validation
+- Scheduler Integration
+- Progress Bars
 """
 
 from pathlib import Path
 from copy import deepcopy
 
 import torch
+from torch.cuda.amp import autocast, GradScaler
+from tqdm import tqdm
+
+from utils.metrics import (
+    AverageMeter,
+    accuracy,
+)
 
 
 class ModelEMA:
     """
-    Exponential Moving Average of model weights.
+    Exponential Moving Average
     """
 
     def __init__(
@@ -26,29 +37,24 @@ class ModelEMA:
         decay=0.9999,
     ):
         self.ema = deepcopy(model).eval()
-
         self.decay = decay
 
         for param in self.ema.parameters():
             param.requires_grad_(False)
 
     @torch.no_grad()
-    def update(
-        self,
-        model,
-    ):
+    def update(self, model):
+
         ema_state = self.ema.state_dict()
         model_state = model.state_dict()
 
-        for key in ema_state.keys():
+        for k, v in ema_state.items():
 
-            if ema_state[key].dtype.is_floating_point:
+            if v.dtype.is_floating_point:
 
-                ema_state[key].mul_(
-                    self.decay
-                ).add_(
-                    model_state[key],
-                    alpha=1.0 - self.decay,
+                v.mul_(self.decay).add_(
+                    model_state[k],
+                    alpha=(1.0 - self.decay),
                 )
 
     def state_dict(self):
@@ -57,12 +63,12 @@ class ModelEMA:
 
 class CheckpointManager:
     """
-    Save and load checkpoints.
+    Save / Load Checkpoints
     """
 
     def __init__(
         self,
-        checkpoint_dir,
+        checkpoint_dir="checkpoints",
     ):
         self.checkpoint_dir = Path(
             checkpoint_dir
@@ -116,15 +122,11 @@ class CheckpointManager:
         )
 
         model.load_state_dict(
-            checkpoint[
-                "model_state_dict"
-            ]
+            checkpoint["model_state_dict"]
         )
 
         optimizer.load_state_dict(
-            checkpoint[
-                "optimizer_state_dict"
-            ]
+            checkpoint["optimizer_state_dict"]
         )
 
         return (
@@ -134,12 +136,6 @@ class CheckpointManager:
 
 
 class Trainer:
-    """
-    Trainer Skeleton
-
-    Part A:
-    Infrastructure only.
-    """
 
     def __init__(
         self,
@@ -156,13 +152,11 @@ class Trainer:
         self.scheduler = scheduler
         self.criterion = criterion
 
-        self.device = device
+        self.device = torch.device(device)
 
         self.config = config
 
-        self.model.to(
-            self.device
-        )
+        self.model.to(self.device)
 
         self.ema = ModelEMA(
             model,
@@ -183,6 +177,282 @@ class Trainer:
 
         self.best_metric = 0.0
 
+        self.scaler = GradScaler(
+            enabled=(
+                torch.cuda.is_available()
+                and config.get(
+                    "amp",
+                    True,
+                )
+            )
+        )
+
         print(
             "[INFO] Trainer initialized"
         )
+
+    def train_one_epoch(
+        self,
+        train_loader,
+        epoch,
+    ):
+
+        self.model.train()
+
+        loss_meter = AverageMeter()
+        acc_meter = AverageMeter()
+
+        accumulation_steps = (
+            self.config.get(
+                "accumulation_steps",
+                1,
+            )
+        )
+
+        use_amp = (
+            torch.cuda.is_available()
+            and self.config.get(
+                "amp",
+                True,
+            )
+        )
+
+        progress_bar = tqdm(
+            train_loader,
+            desc=f"Train Epoch {epoch}",
+        )
+
+        self.optimizer.zero_grad()
+
+        for step, (
+            inputs,
+            targets,
+        ) in enumerate(progress_bar):
+
+            inputs = inputs.to(
+                self.device,
+                non_blocking=True,
+            )
+
+            targets = targets.to(
+                self.device,
+                non_blocking=True,
+            )
+
+            with autocast(
+                enabled=use_amp
+            ):
+
+                outputs = self.model(
+                    inputs
+                )
+
+                loss = self.criterion(
+                    outputs,
+                    targets,
+                )
+
+                loss = (
+                    loss
+                    / accumulation_steps
+                )
+
+            self.scaler.scale(
+                loss
+            ).backward()
+
+            if (
+                (step + 1)
+                % accumulation_steps
+                == 0
+            ):
+
+                self.scaler.unscale_(
+                    self.optimizer
+                )
+
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.config.get(
+                        "gradient_clip",
+                        1.0,
+                    ),
+                )
+
+                self.scaler.step(
+                    self.optimizer
+                )
+
+                self.scaler.update()
+
+                self.optimizer.zero_grad()
+
+                self.ema.update(
+                    self.model
+                )
+
+                if (
+                    self.scheduler
+                    is not None
+                ):
+                    self.scheduler.step()
+
+            acc = accuracy(
+                outputs.detach(),
+                targets,
+            )
+
+            loss_meter.update(
+                loss.item()
+                * accumulation_steps,
+                targets.size(0),
+            )
+
+            acc_meter.update(
+                acc,
+                targets.size(0),
+            )
+
+            progress_bar.set_postfix(
+                loss=f"{loss_meter.avg:.4f}",
+                acc=f"{acc_meter.avg:.2f}",
+            )
+
+        return {
+            "loss": loss_meter.avg,
+            "acc": acc_meter.avg,
+        }
+
+    @torch.no_grad()
+    def validate(
+        self,
+        val_loader,
+    ):
+
+        self.model.eval()
+
+        loss_meter = AverageMeter()
+        acc_meter = AverageMeter()
+
+        for (
+            inputs,
+            targets,
+        ) in tqdm(
+            val_loader,
+            desc="Validation",
+        ):
+
+            inputs = inputs.to(
+                self.device
+            )
+
+            targets = targets.to(
+                self.device
+            )
+
+            outputs = self.model(
+                inputs
+            )
+
+            loss = self.criterion(
+                outputs,
+                targets,
+            )
+
+            acc = accuracy(
+                outputs,
+                targets,
+            )
+
+            loss_meter.update(
+                loss.item(),
+                targets.size(0),
+            )
+
+            acc_meter.update(
+                acc,
+                targets.size(0),
+            )
+
+        return {
+            "loss": loss_meter.avg,
+            "acc": acc_meter.avg,
+        }
+
+    def fit(
+        self,
+        train_loader,
+        val_loader,
+    ):
+
+        epochs = self.config.get(
+            "epochs",
+            1,
+        )
+
+        for epoch in range(
+            1,
+            epochs + 1,
+        ):
+
+            train_metrics = (
+                self.train_one_epoch(
+                    train_loader,
+                    epoch,
+                )
+            )
+
+            val_metrics = (
+                self.validate(
+                    val_loader
+                )
+            )
+
+            print(
+                f"\nEpoch {epoch}"
+            )
+
+            print(
+                f"Train Loss: {train_metrics['loss']:.4f}"
+            )
+
+            print(
+                f"Train Acc : {train_metrics['acc']:.2f}"
+            )
+
+            print(
+                f"Val Loss  : {val_metrics['loss']:.4f}"
+            )
+
+            print(
+                f"Val Acc   : {val_metrics['acc']:.2f}"
+            )
+
+            self.checkpoint_manager.save(
+                model=self.model,
+                optimizer=self.optimizer,
+                epoch=epoch,
+                best_metric=self.best_metric,
+                filename="last_model.pth",
+            )
+
+            if (
+                val_metrics["acc"]
+                > self.best_metric
+            ):
+
+                self.best_metric = (
+                    val_metrics["acc"]
+                )
+
+                self.checkpoint_manager.save(
+                    model=self.model,
+                    optimizer=self.optimizer,
+                    epoch=epoch,
+                    best_metric=self.best_metric,
+                    filename="best_model.pth",
+                )
+
+                print(
+                    "[INFO] New Best Model Saved"
+                )
