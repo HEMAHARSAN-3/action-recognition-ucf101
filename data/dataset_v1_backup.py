@@ -33,7 +33,7 @@ VIDEO_EXTENSIONS = (
 
 class VideoDataset(Dataset):
     """
-    Generic Video Dataset
+    Generic Video Dataset.
 
     Folder Structure:
 
@@ -54,8 +54,11 @@ class VideoDataset(Dataset):
         train=True,
     ):
         self.root_dir = Path(root_dir)
+
         self.num_frames = num_frames
+
         self.transform = transform
+
         self.train = train
 
         self.classes = sorted(
@@ -75,24 +78,32 @@ class VideoDataset(Dataset):
 
         self._build_dataset()
 
-        print(f"[INFO] Found {len(self.classes)} classes")
-        print(f"[INFO] Found {len(self.samples)} videos")
+        print(
+            f"[INFO] Found {len(self.classes)} classes"
+        )
+
+        print(
+            f"[INFO] Found {len(self.samples)} videos"
+        )
 
     def _build_dataset(self):
-        """
-        Build dataset index
-        """
 
         for class_name in self.classes:
 
-            class_dir = self.root_dir / class_name
+            class_dir = (
+                self.root_dir / class_name
+            )
 
-            label = self.class_to_idx[class_name]
+            label = self.class_to_idx[
+                class_name
+            ]
 
             for video_path in class_dir.iterdir():
 
-                if video_path.suffix.lower() in VIDEO_EXTENSIONS:
-
+                if (
+                    video_path.suffix.lower()
+                    in VIDEO_EXTENSIONS
+                ):
                     self.samples.append(
                         (
                             str(video_path),
@@ -101,89 +112,21 @@ class VideoDataset(Dataset):
                     )
 
     def __len__(self):
+
         return len(self.samples)
 
-    def _get_frame_indices(
-        self,
-        total_frames,
-    ):
-        """
-        Generate temporal sampling indices
-        """
-
-        if total_frames <= 0:
-            raise RuntimeError(
-                "Video contains no frames."
-            )
-
-        # Video shorter than clip length
-        if total_frames < self.num_frames:
-
-            indices = np.linspace(
-                0,
-                total_frames - 1,
-                self.num_frames,
-            ).astype(int)
-
-        else:
-
-            # Training = random temporal crop
-            if self.train:
-
-                start = np.random.randint(
-                    0,
-                    total_frames - self.num_frames + 1,
-                )
-
-            # Validation = center crop
-            else:
-
-                start = (
-                    total_frames
-                    - self.num_frames
-                ) // 2
-
-            indices = np.linspace(
-                start,
-                start + self.num_frames - 1,
-                self.num_frames,
-            ).astype(int)
-
-        return indices
-
-    def _read_video(
-        self,
-        video_path,
-    ):
-        """
-        Read only required frames
-        """
+    def _read_video(self, video_path):
 
         cap = cv2.VideoCapture(video_path)
 
-        total_frames = int(
-            cap.get(
-                cv2.CAP_PROP_FRAME_COUNT
-            )
-        )
-
-        frame_indices = self._get_frame_indices(
-            total_frames
-        )
-
         frames = []
 
-        for frame_idx in frame_indices:
-
-            cap.set(
-                cv2.CAP_PROP_POS_FRAMES,
-                int(frame_idx),
-            )
+        while True:
 
             success, frame = cap.read()
 
             if not success:
-                continue
+                break
 
             frame = cv2.cvtColor(
                 frame,
@@ -194,26 +137,83 @@ class VideoDataset(Dataset):
 
         cap.release()
 
-        if len(frames) == 0:
-
-            raise RuntimeError(
-                f"Failed to load frames from {video_path}"
-            )
-
-        # Pad if necessary
-        while len(frames) < self.num_frames:
-            frames.append(frames[-1])
-
         return frames
 
-    def __getitem__(
-        self,
-        index,
-    ):
-        video_path, label = self.samples[index]
+    def _sample_frames(self, frames):
+
+        total_frames = len(frames)
+
+        if total_frames == 0:
+            raise RuntimeError(
+                "Video contains no frames."
+            )
+
+        if total_frames < self.num_frames:
+
+            indices = np.linspace(
+                0,
+                total_frames - 1,
+                self.num_frames,
+            ).astype(int)
+
+        else:
+
+            if self.train:
+
+                start = np.random.randint(
+                    0,
+                    max(
+                        1,
+                        total_frames
+                        - self.num_frames,
+                    ),
+                )
+
+                indices = np.linspace(
+                    start,
+                    start
+                    + self.num_frames
+                    - 1,
+                    self.num_frames,
+                ).astype(int)
+
+            else:
+
+                center = total_frames // 2
+
+                start = max(
+                    0,
+                    center
+                    - self.num_frames // 2,
+                )
+
+                indices = np.linspace(
+                    start,
+                    start
+                    + self.num_frames
+                    - 1,
+                    self.num_frames,
+                ).astype(int)
+
+        sampled = [
+            frames[i]
+            for i in indices
+        ]
+
+        return sampled
+
+    def __getitem__(self, index):
+
+        video_path, label = (
+            self.samples[index]
+        )
 
         frames = self._read_video(
             video_path
+        )
+
+        frames = self._sample_frames(
+            frames
         )
 
         clip = np.stack(frames)
@@ -245,6 +245,8 @@ class VideoDataset(Dataset):
         )
 
         if self.transform:
-            clip = self.transform(clip)
+            clip = self.transform(
+                clip
+            )
 
         return clip, label
