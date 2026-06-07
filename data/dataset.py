@@ -154,6 +154,7 @@ class VideoDataset(Dataset):
     def _load_frames(
         self,
         video_path,
+        frame_indices,
     ):
         """
         Read only required frames
@@ -212,8 +213,27 @@ class VideoDataset(Dataset):
     ):
         video_path, label = self.samples[index]
 
-        frames = self._read_video(
-            video_path
+        cap = cv2.VideoCapture(
+            str(video_path)
+        )
+
+        total_frames = int(
+            cap.get(
+                cv2.CAP_PROP_FRAME_COUNT
+            )
+        )
+
+        cap.release()
+
+        frame_indices = (
+            self._get_frame_indices(
+                total_frames
+            )
+        )
+
+        frames = self._load_frames(
+            video_path,
+            frame_indices,
         )
 
         clip = np.stack(frames)
@@ -245,6 +265,11 @@ class VideoDataset(Dataset):
         )
 
         if self.transform:
-            clip = self.transform(clip)
+            clip = self.transform(
+                clip
+            )
 
-        return clip, label
+        return (
+            clip,
+            label,
+        )

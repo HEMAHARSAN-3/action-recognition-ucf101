@@ -83,6 +83,7 @@ class CheckpointManager:
         self,
         model,
         optimizer,
+        scheduler,
         epoch,
         best_metric,
         filename,
@@ -92,6 +93,11 @@ class CheckpointManager:
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": (
+                scheduler.state_dict()
+                if scheduler is not None
+                else None
+            ),
             "best_metric": best_metric,
         }
 
@@ -109,30 +115,41 @@ class CheckpointManager:
             f"[INFO] Saved checkpoint: {save_path}"
         )
 
-    def load(
-        self,
-        model,
-        optimizer,
+def load(
+    self,
+    model,
+    optimizer,
+    scheduler,
+    checkpoint_path,
+):
+
+    checkpoint = torch.load(
         checkpoint_path,
+        map_location="cpu",
+    )
+
+    model.load_state_dict(
+        checkpoint["model_state_dict"]
+    )
+
+    optimizer.load_state_dict(
+        checkpoint["optimizer_state_dict"]
+    )
+
+    if (
+        scheduler is not None
+        and checkpoint.get(
+            "scheduler_state_dict"
+        ) is not None
     ):
-
-        checkpoint = torch.load(
-            checkpoint_path,
-            map_location="cpu",
+        scheduler.load_state_dict(
+            checkpoint["scheduler_state_dict"]
         )
 
-        model.load_state_dict(
-            checkpoint["model_state_dict"]
-        )
-
-        optimizer.load_state_dict(
-            checkpoint["optimizer_state_dict"]
-        )
-
-        return (
-            checkpoint["epoch"],
-            checkpoint["best_metric"],
-        )
+    return (
+        checkpoint["epoch"],
+        checkpoint["best_metric"],
+    )
 
 
 class Trainer:
@@ -176,6 +193,7 @@ class Trainer:
         )
 
         self.best_metric = 0.0
+        self.start_epoch = 1
 
         self.scaler = GradScaler(
             enabled=(
@@ -322,6 +340,30 @@ class Trainer:
             "loss": loss_meter.avg,
             "acc": acc_meter.avg,
         }
+    
+    def resume(
+        self,
+        checkpoint_path,
+    ):
+        """
+        Resume training from checkpoint.
+        """
+
+        epoch, best_metric = (
+            self.checkpoint_manager.load(
+                self.model,
+                self.optimizer,
+                self.scheduler,
+                checkpoint_path,
+            )
+        )
+
+        self.start_epoch = epoch + 1
+        self.best_metric = best_metric
+
+        print(
+            f"[INFO] Resumed from epoch {epoch}"
+        )
 
     @torch.no_grad()
     def validate(
@@ -391,7 +433,7 @@ class Trainer:
         )
 
         for epoch in range(
-            1,
+            self.start_epoch,
             epochs + 1,
         ):
 
@@ -431,6 +473,7 @@ class Trainer:
             self.checkpoint_manager.save(
                 model=self.model,
                 optimizer=self.optimizer,
+                scheduler=self.scheduler,
                 epoch=epoch,
                 best_metric=self.best_metric,
                 filename="last_model.pth",
@@ -448,6 +491,7 @@ class Trainer:
                 self.checkpoint_manager.save(
                     model=self.model,
                     optimizer=self.optimizer,
+                    scheduler=self.scheduler,
                     epoch=epoch,
                     best_metric=self.best_metric,
                     filename="best_model.pth",

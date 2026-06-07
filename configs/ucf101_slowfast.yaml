@@ -1,6 +1,6 @@
 dataset:
   name: ucf101
-  root: datasets/UCF101
+  root: datasets/UCF101 
   num_classes: 101
   num_frames: 32
   frame_size: [224, 224]

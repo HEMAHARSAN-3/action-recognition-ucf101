@@ -1,7 +1,7 @@
 """
 scripts/evaluate.py
 
-Model Evaluation Script
+Evaluate trained Action Recognition models.
 """
 
 import sys
@@ -15,12 +15,11 @@ if str(PROJECT_ROOT) not in sys.path:
 import argparse
 import yaml
 import torch
-
 from torch.utils.data import DataLoader
 
 from data.dataset import VideoDataset
-from models.model_factory import get_model
 from engine.evaluator import Evaluator
+from models.model_factory import get_model
 
 
 def load_config(config_path):
@@ -49,10 +48,6 @@ def main(args):
         else "cpu"
     )
 
-    print(
-        f"[INFO] Device: {device}"
-    )
-
     dataset = VideoDataset(
         root_dir=dataset_cfg["root"],
         num_frames=dataset_cfg["num_frames"],
@@ -61,8 +56,9 @@ def main(args):
 
     dataloader = DataLoader(
         dataset,
-        batch_size=8,
+        batch_size=4,
         shuffle=False,
+        num_workers=0,
     )
 
     model = get_model(
@@ -79,9 +75,7 @@ def main(args):
     )
 
     model.load_state_dict(
-        checkpoint[
-            "model_state_dict"
-        ]
+        checkpoint["model_state_dict"]
     )
 
     evaluator = Evaluator(
@@ -90,36 +84,58 @@ def main(args):
     )
 
     metrics = evaluator.evaluate(
-        dataloader
+        dataloader,
+        class_names=dataset.classes,
+    )
+
+    output_dir = Path("outputs")
+    output_dir.mkdir(
+        exist_ok=True
     )
 
     evaluator.save_metrics(
         metrics,
-        "outputs/metrics.json",
+        output_dir / "metrics.json",
+    )
+
+    evaluator.save_confusion_matrix(
+        metrics,
+        output_dir / "confusion_matrix.png",
+    )
+
+    evaluator.save_classification_report(
+        metrics,
+        output_dir / "classification_report.json",
+    )
+
+    print("\n===== RESULTS =====")
+
+    print(
+        f"Top1 Accuracy : {metrics['top1']:.2f}"
     )
 
     print(
-        "\n===== RESULTS ====="
+        f"Top5 Accuracy : {metrics['top5']:.2f}"
     )
 
     print(
-        f"Top1: {metrics['top1']:.2f}"
+        f"Precision     : {metrics['precision']:.4f}"
     )
 
     print(
-        f"Top5: {metrics['top5']:.2f}"
+        f"Recall        : {metrics['recall']:.4f}"
     )
 
     print(
-        f"Precision: {metrics['precision']:.4f}"
+        f"F1 Score      : {metrics['f1']:.4f}"
     )
 
     print(
-        f"Recall: {metrics['recall']:.4f}"
+        f"Latency (ms)  : {metrics['avg_latency_ms']:.2f}"
     )
 
     print(
-        f"F1: {metrics['f1']:.4f}"
+        f"Throughput    : {metrics['throughput_fps']:.2f} FPS"
     )
 
 
